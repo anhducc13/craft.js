@@ -1,10 +1,13 @@
 const path = require('path');
 
 const inject = require('@rollup/plugin-inject');
+const terser = require('@rollup/plugin-terser');
 const esbuild = require('rollup-plugin-esbuild');
 const resolve = require('rollup-plugin-node-resolve');
 const peerDepsExternal = require('rollup-plugin-peer-deps-external');
 const ts = require('typescript');
+
+const shouldMinify = process.env.NODE_ENV === 'production';
 
 const external = (id) =>
   !id.startsWith('.') &&
@@ -52,6 +55,41 @@ const extensions = ['.js', '.jsx', '.ts', '.tsx'];
  * @param {string} patternInputs
  */
 export const getConfig = (patternInputs, extraPlugins = []) => {
+  const plugins = [
+    peerDepsExternal(),
+    resolve({ extensions }),
+    esbuild.default({
+      exclude: 'node_modules/*',
+    }),
+    inject({
+      include: /\.tsx$/,
+      modules: {
+        React: 'react',
+      },
+    }),
+    TypescriptPlugin({
+      root: path.join(__dirname, 'src'),
+      out: path.join(__dirname, 'dist'),
+    }),
+    ...extraPlugins,
+  ];
+  if (shouldMinify) {
+    plugins.push(
+      terser({
+        output: { comments: 'some' },
+        compress: {
+          keep_infinity: true,
+          pure_getters: true,
+          passes: 10,
+        },
+        ecma: 5,
+        warnings: true,
+        mangle: {
+          reserved: ['Canvas'],
+        },
+      })
+    );
+  }
   const baseConfig = {
     input: path.join(__dirname, patternInputs),
     external,
@@ -69,24 +107,7 @@ export const getConfig = (patternInputs, extraPlugins = []) => {
         preserveModules: true,
       },
     ],
-    plugins: [
-      peerDepsExternal(),
-      resolve({ extensions }),
-      esbuild.default({
-        exclude: 'node_modules/*',
-      }),
-      inject({
-        include: /\.tsx$/,
-        modules: {
-          React: 'react',
-        },
-      }),
-      TypescriptPlugin({
-        root: path.join(__dirname, 'src'),
-        out: path.join(__dirname, 'dist'),
-      }),
-      ...extraPlugins,
-    ],
+    plugins,
   };
 
   return baseConfig;
